@@ -48,14 +48,16 @@ pub mod dump;
 #[cfg(test)]
 mod tests;
 
-use libc::{c_int, c_short, c_void, c_uint, socket, SOCK_RAW, close, bind, sockaddr, read, write,
-           setsockopt, SOL_SOCKET, SO_RCVTIMEO, timeval, EINPROGRESS, SO_SNDTIMEO, time_t,
-           suseconds_t, fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
 use itertools::Itertools;
-use std::{error, fmt, io, time};
+use libc::{
+    bind, c_int, c_short, c_uint, c_void, close, fcntl, read, setsockopt, sockaddr, socket,
+    suseconds_t, time_t, timeval, write, EINPROGRESS, F_GETFL, F_SETFL, O_NONBLOCK, SOCK_RAW,
+    SOL_SOCKET, SO_RCVTIMEO, SO_SNDTIMEO,
+};
+use nix::net::if_::if_nametoindex;
 use std::mem::size_of;
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
-use nix::net::if_::if_nametoindex;
+use std::{error, fmt, io, time};
 
 /// Check an error return value for timeouts.
 ///
@@ -139,7 +141,6 @@ const CAN_FRAME_DATA_LEN_MAX: usize = 64;
 const CANFD_BRS: u8 = 0x01; /* bit rate switch (second bitrate for payload data) */
 const CANFD_ESI: u8 = 0x02; /* error state indicator of the transmitting node */
 
-
 fn c_timeval_new(t: time::Duration) -> timeval {
     timeval {
         tv_sec: t.as_secs() as time_t,
@@ -191,7 +192,6 @@ impl error::Error for CANSocketOpenError {
         }
     }
 }
-
 
 #[derive(Debug, Copy, Clone)]
 /// Error that occurs when creating CAN packets
@@ -278,9 +278,11 @@ impl CANSocket {
         let bind_rv;
         unsafe {
             let sockaddr_ptr = &addr as *const CANAddr;
-            bind_rv = bind(sock_fd,
-                           sockaddr_ptr as *const sockaddr,
-                           size_of::<CANAddr>() as u32);
+            bind_rv = bind(
+                sock_fd,
+                sockaddr_ptr as *const sockaddr,
+                size_of::<CANAddr>() as u32,
+            );
         }
 
         if bind_rv == -1 {
@@ -332,7 +334,13 @@ impl CANSocket {
         let fd_frames_enable = fd_frames_enable as c_int;
         let opt_ptr = &fd_frames_enable as *const c_int;
         let rv = unsafe {
-            setsockopt(self.fd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, opt_ptr as *const c_void, size_of::<c_int>() as u32)
+            setsockopt(
+                self.fd,
+                SOL_CAN_RAW,
+                CAN_RAW_FD_FRAMES,
+                opt_ptr as *const c_void,
+                size_of::<c_int>() as u32,
+            )
         };
 
         if rv == -1 {
@@ -349,11 +357,13 @@ impl CANSocket {
         let rv = unsafe {
             let tv = c_timeval_new(duration);
             let tv_ptr: *const timeval = &tv as *const timeval;
-            setsockopt(self.fd,
-                       SOL_SOCKET,
-                       SO_RCVTIMEO,
-                       tv_ptr as *const c_void,
-                       size_of::<timeval>() as u32)
+            setsockopt(
+                self.fd,
+                SOL_SOCKET,
+                SO_RCVTIMEO,
+                tv_ptr as *const c_void,
+                size_of::<timeval>() as u32,
+            )
         };
 
         if rv != 0 {
@@ -368,11 +378,13 @@ impl CANSocket {
         let rv = unsafe {
             let tv = c_timeval_new(duration);
             let tv_ptr: *const timeval = &tv as *const timeval;
-            setsockopt(self.fd,
-                       SOL_SOCKET,
-                       SO_SNDTIMEO,
-                       tv_ptr as *const c_void,
-                       size_of::<timeval>() as u32)
+            setsockopt(
+                self.fd,
+                SOL_SOCKET,
+                SO_SNDTIMEO,
+                tv_ptr as *const c_void,
+                size_of::<timeval>() as u32,
+            )
         };
 
         if rv != 0 {
@@ -396,12 +408,16 @@ impl CANSocket {
             /// > uninitialized data in a variable even if that variable has an integer type,
             /// > which otherwise can hold any fixed bit pattern [...]
             ///
-            s: unsafe { std::mem::MaybeUninit::zeroed().assume_init() }
+            s: unsafe { std::mem::MaybeUninit::zeroed().assume_init() },
         };
 
         let read_rv = unsafe {
             let frame_ptr = &mut frame.s as *mut CANFrameStruct;
-            read(self.fd, frame_ptr as *mut c_void, size_of::<CANFrameStruct>())
+            read(
+                self.fd,
+                frame_ptr as *mut c_void,
+                size_of::<CANFrameStruct>(),
+            )
         };
 
         frame.tag = match read_rv as usize {
@@ -425,7 +441,7 @@ impl CANSocket {
 
         let frame_size = match frame.tag {
             CANFrameType::Normal => CAN_MTU,
-            CANFrameType::Fd => CANFD_MTU
+            CANFrameType::Fd => CANFD_MTU,
         };
 
         let write_rv = unsafe {
@@ -457,7 +473,6 @@ impl CANSocket {
 
     /// Sets the filter mask on the socket.
     pub fn set_filter(&self, filters: &[CANFilter]) -> io::Result<()> {
-
         // TODO: Handle different *_FILTER sockopts.
 
         let rv = if filters.len() < 1 {
@@ -466,11 +481,13 @@ impl CANSocket {
         } else {
             unsafe {
                 let filters_ptr = &filters[0] as *const CANFilter;
-                setsockopt(self.fd,
-                           SOL_CAN_RAW,
-                           CAN_RAW_FILTER,
-                           filters_ptr as *const c_void,
-                           (size_of::<CANFilter>() * filters.len()) as u32)
+                setsockopt(
+                    self.fd,
+                    SOL_CAN_RAW,
+                    CAN_RAW_FILTER,
+                    filters_ptr as *const c_void,
+                    (size_of::<CANFilter>() * filters.len()) as u32,
+                )
             }
         };
 
@@ -501,11 +518,13 @@ impl CANSocket {
     #[inline(always)]
     pub fn set_error_filter(&self, mask: u32) -> io::Result<()> {
         let rv = unsafe {
-            setsockopt(self.fd,
-                       SOL_CAN_RAW,
-                       CAN_RAW_ERR_FILTER,
-                       (&mask as *const u32) as *const c_void,
-                       size_of::<u32>() as u32)
+            setsockopt(
+                self.fd,
+                SOL_CAN_RAW,
+                CAN_RAW_ERR_FILTER,
+                (&mask as *const u32) as *const c_void,
+                size_of::<u32>() as u32,
+            )
         };
 
         if rv != 0 {
@@ -513,7 +532,6 @@ impl CANSocket {
         }
 
         Ok(())
-
     }
 
     #[inline(always)]
@@ -576,14 +594,16 @@ struct CANFrameStruct {
     _res1: u8,
 
     /// buffer for data (classical or FD frame)
-    _data: [u8; CAN_FRAME_DATA_LEN_MAX]
+    _data: [u8; CAN_FRAME_DATA_LEN_MAX],
 }
 
+#[derive(Debug, Copy, Clone)]
 enum CANFrameType {
     Normal,
-    Fd
+    Fd,
 }
 
+#[derive(Copy, Clone)]
 pub struct CANFrame {
     tag: CANFrameType,
     s: CANFrameStruct,
@@ -593,11 +613,11 @@ impl fmt::Debug for CANFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.tag {
             CANFrameType::Normal => {
-                write!(f, "CAN Classical Frame {:?}", self.s )
+                write!(f, "CAN Classical Frame {:?}", self.s)
             }
 
             CANFrameType::Fd => {
-                write!(f, "CAN FD Frame {:?}", self.s )
+                write!(f, "CAN FD Frame {:?}", self.s)
             }
         }
     }
@@ -610,7 +630,14 @@ impl CANFrame {
     }
 
     /// constructor for a new CAN FD frame
-    pub fn new_fd(id: u32, data: &[u8], rtr: bool, err: bool, brs: bool, esi: bool) -> Result<CANFrame, ConstructionError> {
+    pub fn new_fd(
+        id: u32,
+        data: &[u8],
+        rtr: bool,
+        err: bool,
+        brs: bool,
+        esi: bool,
+    ) -> Result<CANFrame, ConstructionError> {
         let mut flags: u8 = 0;
         if brs {
             flags = flags | CANFD_BRS;
@@ -621,12 +648,19 @@ impl CANFrame {
         CANFrame::new_common(CANFrameType::Fd, id, data, rtr, err, flags)
     }
 
-    fn new_common(frame_type: CANFrameType, id: u32, data: &[u8], rtr: bool, err: bool, flags: u8) -> Result<CANFrame, ConstructionError> {
+    fn new_common(
+        frame_type: CANFrameType,
+        id: u32,
+        data: &[u8],
+        rtr: bool,
+        err: bool,
+        flags: u8,
+    ) -> Result<CANFrame, ConstructionError> {
         let mut _id = id;
 
         let max_valid_data_len = match frame_type {
             CANFrameType::Normal => 8,
-            CANFrameType::Fd => 64
+            CANFrameType::Fd => 64,
         };
 
         if data.len() > max_valid_data_len {
@@ -641,7 +675,6 @@ impl CANFrame {
         if id > SFF_MASK {
             _id |= EFF_FLAG;
         }
-
 
         if rtr {
             _id |= RTR_FLAG;
@@ -667,12 +700,16 @@ impl CANFrame {
                 _res0: 0,
                 _res1: 0,
                 _data: full_data,
-            }
+            },
         })
     }
 
     pub fn is_fd(&self) -> bool {
-        if let CANFrameType::Fd = self.tag { true } else { false }
+        if let CANFrameType::Fd = self.tag {
+            true
+        } else {
+            false
+        }
     }
     pub fn is_fd_brs(&self) -> bool {
         return self.is_fd() && (self.s._pad_flags & CANFD_BRS == CANFD_BRS);
@@ -730,11 +767,15 @@ impl CANFrame {
 
 impl fmt::UpperHex for CANFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:X}{}", self.id(),
-               match self.tag {
-                   CANFrameType::Normal => "#",
-                   CANFrameType::Fd => "##"
-               })?;
+        write!(
+            f,
+            "{:X}{}",
+            self.id(),
+            match self.tag {
+                CANFrameType::Normal => "#",
+                CANFrameType::Fd => "##",
+            }
+        )?;
 
         if let CANFrameType::Fd = self.tag {
             write!(f, "{} ", self.s._pad_flags)?;
@@ -761,8 +802,8 @@ pub struct CANFilter {
 impl CANFilter {
     pub fn new(id: u32, mask: u32) -> Result<CANFilter, ConstructionError> {
         Ok(CANFilter {
-               _id: id,
-               _mask: mask,
-           })
+            _id: id,
+            _mask: mask,
+        })
     }
 }
