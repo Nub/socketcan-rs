@@ -422,7 +422,7 @@ impl CANSocket {
 
         frame.tag = match read_rv as usize {
             CAN_MTU => CANFrameType::Normal,
-            CANFD_MTU => CANFrameType::Fd,
+            CAN_MTU..=CANFD_MTU => CANFrameType::Fd,
             _ => return Err(io::Error::last_os_error()),
         };
 
