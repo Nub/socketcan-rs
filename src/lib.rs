@@ -416,7 +416,7 @@ impl CANSocket {
             read(
                 self.fd,
                 frame_ptr as *mut c_void,
-                size_of::<CANFrameStruct>(),
+                CANFD_MTU,
             )
         };
 
